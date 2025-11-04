@@ -1,0 +1,50 @@
+name: Monday Priorities Update
+
+on:
+  schedule:
+    # Run every Monday at 9:00 AM PST
+    # PST is UTC-8, PDT is UTC-7
+    # Using 17:00 UTC for 9:00 AM PST (standard time)
+    # Note: GitHub Actions uses UTC time for cron expressions
+    - cron: '0 17 * * 1'
+  
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  run-priorities:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.2'
+          extensions: ctype, iconv
+          coverage: none
+      
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+      
+      - name: Cache Composer dependencies
+        uses: actions/cache@v3
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+      
+      - name: Install dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
+      
+      - name: Run post:priorities command
+        run: php bin/console post:priorities
+        env:
+          APP_ENV: prod
+          SLACK_OAUTH_TOKEN: ${{ secrets.SLACK_OAUTH_TOKEN }}
+          SLACK_CHANNEL_ID: ${{ secrets.SLACK_CHANNEL_ID }}
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
