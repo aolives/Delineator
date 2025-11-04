@@ -10,7 +10,7 @@
         "guzzlehttp/guzzle": "^7.10",
         "symfony/console": "7.3.*",
         "symfony/dotenv": "7.3.*",
-        "symfony/flex": "^2",
+        "symfony/flex": "^2.9",
         "symfony/framework-bundle": "7.3.*",
         "symfony/runtime": "7.3.*",
         "symfony/yaml": "7.3.*"
@@ -67,7 +67,7 @@
         }
     },
     "require-dev": {
-        "phpstan/extension-installer": "^1.4",
-        "phpstan/phpstan-symfony": "^2.0"
+        "phpstan/extension-installer": "^1.4.3",
+        "phpstan/phpstan-symfony": "^2.0.8"
     }
 }

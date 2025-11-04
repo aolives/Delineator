@@ -27,10 +27,6 @@ final class PostWeeklyPriorities extends Command
     {
         $this
             ->setDescription('Fetches Linear issues and posts update to Slack thread')
-            ->addOption('slack-token', null, InputOption::VALUE_REQUIRED, 'Slack OAuth token (or set SLACK_OAUTH_TOKEN env var)')
-            ->addOption('channel-id', null, InputOption::VALUE_REQUIRED, 'Slack channel ID (or set SLACK_CHANNEL_ID env var)')
-            ->addOption('thread-ts', null, InputOption::VALUE_OPTIONAL, 'Thread timestamp to reply to (optional - will search for weekly message if not provided)')
-            ->addOption('linear-api-key', null, InputOption::VALUE_REQUIRED, 'Linear API key (or set LINEAR_API_KEY env var)')
             ->addOption('dry-run', null, InputOption::VALUE_NONE, 'Show what would be posted without actually posting')
         ;
     }
@@ -40,13 +36,18 @@ final class PostWeeklyPriorities extends Command
         $io = new SymfonyStyle($input, $output);
 
         // Get configuration
-        $this->slackToken = $input->getOption('slack-token') ?: getenv('SLACK_OAUTH_TOKEN') ?: '';
-        $this->channelId = $input->getOption('channel-id') ?: getenv('SLACK_CHANNEL_ID') ?: '';
-        $this->linearApiKey = $input->getOption('linear-api-key') ?: getenv('LINEAR_API_KEY') ?: '';
-        $threadTs = $input->getOption('thread-ts');
+        $linearEnv = getenv('LINEAR_API_KEY') ?: ($_ENV['LINEAR_API_KEY'] ?? '');
+        $this->linearApiKey = is_string($linearEnv) ? $linearEnv : '';
+
+        $slackTokenEnv = getenv('SLACK_OAUTH_TOKEN') ?: ($_ENV['SLACK_OAUTH_TOKEN'] ?? '');
+        $this->slackToken = is_string($slackTokenEnv) ? $slackTokenEnv : '';
+
+        $channelIdEnv = getenv('SLACK_CHANNEL_ID') ?: ($_ENV['SLACK_CHANNEL_ID'] ?? '');
+        $this->channelId = is_string($channelIdEnv) ? $channelIdEnv : '';
+
         $isDryRun = $input->getOption('dry-run');
 
-        if (!$this->slackToken || !$this->channelId || !$this->linearApiKey) {
+        if (!$this->linearApiKey || !$this->slackToken || !$this->channelId) {
             $io->error('Missing required configuration. Please provide Slack token, channel ID, and Linear API key.');
             return Command::FAILURE;
         }
@@ -65,14 +66,12 @@ final class PostWeeklyPriorities extends Command
                 return Command::SUCCESS;
             }
 
-            // Step 2: Find the weekly message thread if no thread_ts provided
-            if (!$threadTs) {
-                $io->section('Finding weekly message thread...');
-                $threadTs = $this->findWeeklyMessageThread();
+            // Step 2: Find the weekly message thread
+            $io->section('Finding weekly message thread...');
+            $threadTs = $this->findWeeklyMessageThread();
 
-                if (!$threadTs) {
-                    $io->warning('Could not find weekly message thread. Posting as new message.');
-                }
+            if (!$threadTs) {
+                $io->warning('Could not find weekly message thread. Posting as new message.');
             }
 
             // Step 3: Post to Slack
@@ -92,11 +91,14 @@ final class PostWeeklyPriorities extends Command
         }
     }
 
+    /**
+     * @return array<int, array{date: string, issues: array<int, array<string, mixed>>}>
+     */
     private function fetchLinearIssues(): array
     {
         $issuesQuery = <<<'GRAPHQL'
         query {
-          user(id: "aa644b5e-8fd7-43b1-814f-71f8954eb4d6") {
+          viewer {
             id
             name
             assignedIssues(orderBy: updatedAt) {
@@ -137,33 +139,48 @@ final class PostWeeklyPriorities extends Command
             'body' => $body,
         ]);
 
-        $data = json_decode($response->getBody()->getContents(), true);
+        /** @var array{data?: array{viewer?: array<string, mixed>}} $data */
+        $data = json_decode($response->getBody()->getContents(), true) ?: [];
 
-        if (!isset($data['data']['user'])) {
+        if (!isset($data['data']['viewer'])) {
             throw new \RuntimeException('No user data found from Linear API.');
         }
 
-        return $this->processLinearData($data['data']['user']);
+        return $this->processLinearData($data['data']['viewer']);
     }
 
+    /**
+     * @param array<string, mixed> $user
+     * @return array<int, array{date: string, issues: array<int, array<string, mixed>>}>
+     */
     private function processLinearData(array $user): array
     {
+
+        $assignedIssues = $user['assignedIssues'] ?? [];
+        /** @var array<int, array<string, mixed>> $nodes */
+        $nodes = is_array($assignedIssues) && isset($assignedIssues['nodes']) && is_array($assignedIssues['nodes']) ? $assignedIssues['nodes'] : [];
+
+        /** @var array<int, array<string, mixed>> $allIssues */
         $allIssues = array_map(
-            fn(array $issue) => [
+            /** @param array<string, mixed> $issue
+             * @return array<string, mixed>
+             */
+            function(array $issue): array {
+                return [
                 'id' => $issue['id'],
                 'identifier' => $issue['identifier'],
                 'title' => $issue['title'],
                 'url' => $issue['url'],
                 'estimate' => $issue['estimate'] ?? null,
                 'priority' => $issue['priority'],
-                'createdAt' => isset($issue['createdAt']) ? (new \DateTimeImmutable($issue['createdAt']))->format('Y-m-d H:i:s') : null,
-                'completedAt' => isset($issue['completedAt']) ? (new \DateTimeImmutable($issue['completedAt']))->format('Y-m-d H:i:s') : null,
-                'cycleStartsAt' => isset($issue['cycle']['startsAt']) ? (new \DateTimeImmutable($issue['cycle']['startsAt']))->format('Y-m-d') : null,
-                'isActive' => $issue['cycle']['isActive'] ?? null,
-                'isNext' => $issue['cycle']['isNext'] ?? null,
-                'isPrevious' => $issue['cycle']['isPrevious'] ?? null,
-                'stateName' => $issue['state']['name'],
-                'statePosition__c' => match ($issue['state']['name']) {
+                'createdAt' => isset($issue['createdAt']) && is_string($issue['createdAt']) ? (new \DateTimeImmutable($issue['createdAt']))->format('Y-m-d H:i:s') : null,
+                'completedAt' => isset($issue['completedAt']) && is_string($issue['completedAt']) ? (new \DateTimeImmutable($issue['completedAt']))->format('Y-m-d H:i:s') : null,
+                'cycleStartsAt' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['startsAt']) && is_string($issue['cycle']['startsAt']) ? (new \DateTimeImmutable($issue['cycle']['startsAt']))->format('Y-m-d') : null,
+                'isActive' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['isActive']) ? $issue['cycle']['isActive'] : null,
+                'isNext' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['isNext']) ? $issue['cycle']['isNext'] : null,
+                'isPrevious' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['isPrevious']) ? $issue['cycle']['isPrevious'] : null,
+                'stateName' => isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '',
+                'statePosition__c' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
                     'Done' => 0,
                     'In Review' => 1,
                     'In Progress' => 2,
@@ -175,7 +192,7 @@ final class PostWeeklyPriorities extends Command
                     'Duplicate' => 9,
                     default => 100,
                 },
-                'stateSymbol' => match ($issue['state']['name']) {
+                'stateSymbol' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
                     'Pending' => ':blocked:',
                     'In Progress' => ':loading:',
                     'In Review' => ':in_review:',
@@ -184,20 +201,30 @@ final class PostWeeklyPriorities extends Command
                     'Duplicate' => ':clown_face:',
                     default => null,
                 },
-            ],
-            $user['assignedIssues']['nodes'] ?? []
+            ];
+            },
+            $nodes
         );
 
-        $allIssuesByCycle = array_map(
-            fn(string $date) => ['date' => $date],
-            array_filter(array_unique(array_column($allIssues, 'cycleStartsAt')),
-                function(?string $date) {
-                    if (null === $date) {
-                        return false;
-                    }
-                    return new \DateTimeImmutable($date) >= new \DateTimeImmutable('monday last week');
+        /** @var array<int, string|null> $dates */
+        $dates = array_column($allIssues, 'cycleStartsAt');
+        $uniqueDates = array_unique($dates);
+
+        /** @var array<string> $filteredDates */
+        $filteredDates = array_values(array_filter($uniqueDates,
+            /** @param mixed $date */
+            function($date): bool {
+                if (!is_string($date)) {
+                    return false;
                 }
-            ),
+                return new \DateTimeImmutable($date) >= new \DateTimeImmutable('monday last week');
+            }
+        ));
+
+        $allIssuesByCycle = array_map(
+            /** @param string $date */
+            fn(string $date): array => ['date' => $date],
+            $filteredDates
         );
 
         sort($allIssuesByCycle);
@@ -205,10 +232,12 @@ final class PostWeeklyPriorities extends Command
         foreach ($allIssuesByCycle as $key => $cycle) {
             $allIssuesByCycle[$key]['issues'] = array_filter(
                 $allIssues,
-                fn($issue) => $issue['cycleStartsAt'] === $cycle['date']
+                /** @param array<string, mixed> $issue */
+                fn($issue) => ($issue['cycleStartsAt'] ?? '') === $cycle['date']
             );
             usort(
                 $allIssuesByCycle[$key]['issues'],
+                /** @param array<string, mixed> $a @param array<string, mixed> $b */
                 function($a, $b) {
                     $statePositionDiff = $a['statePosition__c'] <=> $b['statePosition__c'];
                     if ($statePositionDiff) {
@@ -240,6 +269,9 @@ final class PostWeeklyPriorities extends Command
         return $allIssuesByCycle;
     }
 
+    /**
+     * @param array<int, array{date: string, issues: array<int, array<string, mixed>>}> $issuesByCycle
+     */
     private function formatIssuesForSlack(array $issuesByCycle): string
     {
         $blocks = [];
@@ -257,15 +289,22 @@ final class PostWeeklyPriorities extends Command
             // Add issues
             $issuesList = [];
             $count = 0;
-            foreach ($cycle['issues'] as $issue) {
-                $symbol = $issue['stateSymbol'] ? $issue['stateSymbol'].' ' : '';
+            /** @var array<int, array<string, mixed>> $issues */
+            $issues = $cycle['issues'];
+            foreach ($issues as $issue) {
+                $stateSymbol = isset($issue['stateSymbol']) ? $issue['stateSymbol'] : null;
+                $symbol = is_string($stateSymbol) && $stateSymbol !== '' ? $stateSymbol.' ' : '';
+
+                $identifier = isset($issue['identifier']) && (is_string($issue['identifier']) || is_numeric($issue['identifier'])) ? (string) $issue['identifier'] : '';
+                $title = isset($issue['title']) && (is_string($issue['title']) || is_numeric($issue['title'])) ? (string) $issue['title'] : '';
+
                 $issuesList[] = sprintf(
                     '%d. %s<%s|%s> - %s',
                     ++$count,
                     $symbol,
-                    'https://linear.app/vacatia/issue/'.$issue['identifier'].'/',
-                    $issue['identifier'],
-                    $issue['title']
+                    'https://linear.app/vacatia/issue/'.$identifier.'/',
+                    $identifier,
+                    $title
                 );
             }
 
@@ -283,7 +322,7 @@ final class PostWeeklyPriorities extends Command
             //            $blocks[] = ['type' => 'divider'];
         }
 
-        return json_encode(['blocks' => $blocks]);
+        return json_encode(['blocks' => $blocks]) ?: '{"blocks":[]}';
     }
 
     private function findWeeklyMessageThread(): ?string
@@ -309,10 +348,12 @@ final class PostWeeklyPriorities extends Command
             ],
         ]);
 
-        $data = json_decode($response->getBody()->getContents(), true);
+        /** @var array{ok?: bool, error?: string, messages?: array<int, array{text?: string, ts: string, thread_ts?: string}>}|array{} $data */
+        $data = json_decode($response->getBody()->getContents(), true) ?: [];
 
-        if (!$data['ok']) {
-            throw new \RuntimeException('Failed to get channel history: '.($data['error'] ?? 'Unknown error'));
+        if (empty($data['ok'])) {
+            $error = isset($data['error']) ? (string) $data['error'] : 'Unknown error';
+            throw new \RuntimeException('Failed to get channel history: '.$error);
         }
 
         // Look for messages matching our patterns
@@ -333,7 +374,8 @@ final class PostWeeklyPriorities extends Command
 
     private function postToSlack(string $message, ?string $threadTs = null): bool
     {
-        $payload = json_decode($message, true);
+        /** @var array<string, mixed> $payload */
+        $payload = json_decode($message, true) ?: [];
         $payload['channel'] = $this->channelId;
         $payload['reply_broadcast'] = true;
 
@@ -349,10 +391,12 @@ final class PostWeeklyPriorities extends Command
             'json' => $payload,
         ]);
 
-        $data = json_decode($response->getBody()->getContents(), true);
+        /** @var array{ok?: bool, error?: string}|array{} $data */
+        $data = json_decode($response->getBody()->getContents(), true) ?: [];
 
-        if (!$data['ok']) {
-            throw new \RuntimeException('Failed to post to Slack: '.($data['error'] ?? 'Unknown error'));
+        if (empty($data['ok'])) {
+            $error = isset($data['error']) ? (string) $data['error'] : 'Unknown error';
+            throw new \RuntimeException('Failed to post to Slack: '.$error);
         }
 
         return true;
