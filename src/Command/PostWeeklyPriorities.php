@@ -16,12 +16,18 @@ use Symfony\Component\Console\Style\SymfonyStyle;
     name: 'post:priorities',
     description: 'Post Monday update to Slack thread'
 )]
-final class PostWeeklyPriorities extends Command
+class PostWeeklyPriorities extends Command
 {
-    private Client $httpClient;
+    private ?Client $httpClient = null;
     private string $slackToken;
     private string $channelId;
     private string $linearApiKey;
+
+    public function __construct(?Client $httpClient = null)
+    {
+        parent::__construct();
+        $this->httpClient = $httpClient;
+    }
 
     protected function configure(): void
     {
@@ -52,7 +58,9 @@ final class PostWeeklyPriorities extends Command
             return Command::FAILURE;
         }
 
-        $this->httpClient = new Client();
+        if (!$this->httpClient) {
+            $this->httpClient = new Client();
+        }
 
         try {
             // Step 1: Get Linear issues
@@ -131,6 +139,7 @@ final class PostWeeklyPriorities extends Command
         GRAPHQL;
 
         $body = json_encode(['query' => $issuesQuery]);
+        assert($this->httpClient instanceof Client);
         $response = $this->httpClient->request('POST', 'https://api.linear.app/graphql', [
             'headers' => [
                 'Content-Type' => 'application/json',
@@ -153,7 +162,7 @@ final class PostWeeklyPriorities extends Command
      * @param array<string, mixed> $user
      * @return array<int, array{date: string, issues: array<int, array<string, mixed>>}>
      */
-    private function processLinearData(array $user): array
+    public function processLinearData(array $user): array
     {
 
         $assignedIssues = $user['assignedIssues'] ?? [];
@@ -337,6 +346,7 @@ final class PostWeeklyPriorities extends Command
         $oneWeekAgo = $now - (7 * 24 * 60 * 60);
 
         // Get channel history
+        assert($this->httpClient instanceof Client);
         $response = $this->httpClient->request('GET', 'https://slack.com/api/conversations.history', [
             'headers' => [
                 'Authorization' => 'Bearer '.$this->slackToken,
@@ -383,6 +393,7 @@ final class PostWeeklyPriorities extends Command
             $payload['thread_ts'] = $threadTs;
         }
 
+        assert($this->httpClient instanceof Client);
         $response = $this->httpClient->request('POST', 'https://slack.com/api/chat.postMessage', [
             'headers' => [
                 'Authorization' => 'Bearer '.$this->slackToken,
