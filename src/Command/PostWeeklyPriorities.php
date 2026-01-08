@@ -55,6 +55,7 @@ class PostWeeklyPriorities extends Command
 
         if (!$this->linearApiKey || !$this->slackToken || !$this->channelId) {
             $io->error('Missing required configuration. Please provide Slack token, channel ID, and Linear API key.');
+
             return Command::FAILURE;
         }
 
@@ -71,6 +72,7 @@ class PostWeeklyPriorities extends Command
             if ($isDryRun) {
                 $io->section('Dry Run - Message to be posted:');
                 $io->text($formattedMessage);
+
                 return Command::SUCCESS;
             }
 
@@ -88,19 +90,22 @@ class PostWeeklyPriorities extends Command
 
             if ($result) {
                 $io->success('Successfully posted update to Slack!');
+
                 return Command::SUCCESS;
             } else {
                 $io->error('Failed to post to Slack.');
+
                 return Command::FAILURE;
             }
         } catch (\Exception $e) {
             $io->error('Error: '.$e->getMessage());
+
             return Command::FAILURE;
         }
     }
 
     /**
-     * @return array<int, array{date: string, issues: array<int, array<string, mixed>>}>
+     * @return array<int, array{week: string, issues: array<int, array<string, mixed>>}>
      */
     private function fetchLinearIssues(): array
     {
@@ -109,7 +114,7 @@ class PostWeeklyPriorities extends Command
           viewer {
             id
             name
-            assignedIssues(orderBy: updatedAt) {
+            assignedIssues(first: 100, orderBy: updatedAt) {
               nodes {
                 id
                 completedAt
@@ -120,14 +125,6 @@ class PostWeeklyPriorities extends Command
                 priority
                 title
                 url
-                cycle {
-                  id
-                  isActive
-                  isNext
-                  isPrevious
-                  name
-                  startsAt
-                }
                 state {
                   name
                   position
@@ -160,11 +157,11 @@ class PostWeeklyPriorities extends Command
 
     /**
      * @param array<string, mixed> $user
-     * @return array<int, array{date: string, issues: array<int, array<string, mixed>>}>
+     *
+     * @return array<int, array{week: string, issues: array<int, array<string, mixed>>}>
      */
     public function processLinearData(array $user): array
     {
-
         $assignedIssues = $user['assignedIssues'] ?? [];
         /** @var array<int, array<string, mixed>> $nodes */
         $nodes = is_array($assignedIssues) && isset($assignedIssues['nodes']) && is_array($assignedIssues['nodes']) ? $assignedIssues['nodes'] : [];
@@ -174,124 +171,158 @@ class PostWeeklyPriorities extends Command
             /** @param array<string, mixed> $issue
              * @return array<string, mixed>
              */
-            function(array $issue): array {
+            function (array $issue): array {
                 return [
-                'id' => $issue['id'],
-                'identifier' => $issue['identifier'],
-                'title' => $issue['title'],
-                'url' => $issue['url'],
-                'estimate' => $issue['estimate'] ?? null,
-                'priority' => $issue['priority'],
-                'createdAt' => isset($issue['createdAt']) && is_string($issue['createdAt']) ? (new \DateTimeImmutable($issue['createdAt']))->format('Y-m-d H:i:s') : null,
-                'completedAt' => isset($issue['completedAt']) && is_string($issue['completedAt']) ? (new \DateTimeImmutable($issue['completedAt']))->format('Y-m-d H:i:s') : null,
-                'cycleStartsAt' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['startsAt']) && is_string($issue['cycle']['startsAt']) ? (new \DateTimeImmutable($issue['cycle']['startsAt']))->format('Y-m-d') : null,
-                'isActive' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['isActive']) ? $issue['cycle']['isActive'] : null,
-                'isNext' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['isNext']) ? $issue['cycle']['isNext'] : null,
-                'isPrevious' => isset($issue['cycle']) && is_array($issue['cycle']) && isset($issue['cycle']['isPrevious']) ? $issue['cycle']['isPrevious'] : null,
-                'stateName' => isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '',
-                'statePosition__c' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
-                    'Done' => 0,
-                    'In Review' => 1,
-                    'In Progress' => 2,
-                    'Pending' => 3,
-                    'Todo' => 4,
-                    'Backlog' => 5,
-                    'Triage' => 6,
-                    'Canceled' => 8,
-                    'Duplicate' => 9,
-                    default => 100,
-                },
-                'stateSymbol' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
-                    'Pending' => ':blocked:',
-                    'In Progress' => ':loading:',
-                    'In Review' => ':in_review:',
-                    'Done' => ':done_2:',
-                    'Canceled' => ':x:',
-                    'Duplicate' => ':clown_face:',
-                    default => null,
-                },
-            ];
+                    'id' => $issue['id'],
+                    'identifier' => $issue['identifier'],
+                    'title' => $issue['title'],
+                    'url' => $issue['url'],
+                    'estimate' => $issue['estimate'] ?? null,
+                    'priority' => $issue['priority'],
+                    'createdAt' => isset($issue['createdAt']) && is_string($issue['createdAt']) ? (new \DateTimeImmutable($issue['createdAt']))->format('Y-m-d H:i:s') : null,
+                    'completedAt' => isset($issue['completedAt']) && is_string($issue['completedAt']) ? (new \DateTimeImmutable($issue['completedAt']))->format('Y-m-d H:i:s') : null,
+                    'stateName' => isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '',
+                    'statePosition__c' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
+                        'Done' => 0,
+                        'In Review' => 1,
+                        'In Progress' => 2,
+                        'Pending' => 3,
+                        'Todo' => 4,
+                        'Backlog' => 5,
+                        'Triage' => 6,
+                        'Canceled' => 8,
+                        'Duplicate' => 9,
+                        default => 100,
+                    },
+                    'stateSymbol' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
+                        'Todo' => ':todo_linear:',
+                        'Pending' => ':blocked:',
+                        'In Progress' => ':in_progress_linear:',
+                        'In Review' => ':in_review_linear:',
+                        'Done' => ':done_linear:',
+                        'Canceled' => ':canceled_linear:',
+                        'Duplicate' => ':clown_face:',
+                        default => null,
+                    },
+                ];
             },
             $nodes
         );
 
-        /** @var array<int, string|null> $dates */
-        $dates = array_column($allIssues, 'cycleStartsAt');
-        $uniqueDates = array_unique($dates);
+        // Calculate week boundaries
+        $lastMonday = new \DateTimeImmutable('monday last week');
+        $thisMonday = new \DateTimeImmutable('monday this week');
+        $lastSunday = $thisMonday->modify('-1 second');
+        $now = new \DateTimeImmutable('now');
 
-        /** @var array<string> $filteredDates */
-        $filteredDates = array_values(array_filter($uniqueDates,
-            /** @param mixed $date */
-            function($date): bool {
-                if (!is_string($date)) {
+        // Format week labels
+        $lastWeekLabel = $lastMonday->format('Y-m-d');
+        $thisWeekLabel = $thisMonday->format('Y-m-d');
+
+        // Active states to include in "This Week"
+        $activeStates = ['Done', 'In Review', 'In Progress', 'Pending', 'Todo'];
+
+        // Filter issues for last week (completed only)
+        $lastWeekIssues = array_filter(
+            $allIssues,
+            function ($issue) use ($lastMonday, $lastSunday) {
+                if (!isset($issue['completedAt']) || !is_string($issue['completedAt'])) {
                     return false;
                 }
-                return new \DateTimeImmutable($date) >= new \DateTimeImmutable('monday last week');
-            }
-        ));
+                $completedDate = new \DateTimeImmutable($issue['completedAt']);
 
-        $allIssuesByCycle = array_map(
-            /** @param string $date */
-            fn(string $date): array => ['date' => $date],
-            $filteredDates
+                return $completedDate >= $lastMonday && $completedDate <= $lastSunday;
+            }
         );
 
-        sort($allIssuesByCycle);
-
-        foreach ($allIssuesByCycle as $key => $cycle) {
-            $allIssuesByCycle[$key]['issues'] = array_filter(
-                $allIssues,
-                /** @param array<string, mixed> $issue */
-                fn($issue) => ($issue['cycleStartsAt'] ?? '') === $cycle['date']
-            );
-            usort(
-                $allIssuesByCycle[$key]['issues'],
-                /** @param array<string, mixed> $a @param array<string, mixed> $b */
-                function($a, $b) {
-                    $statePositionDiff = $a['statePosition__c'] <=> $b['statePosition__c'];
-                    if ($statePositionDiff) {
-                        return $statePositionDiff;
-                    }
-
-                    $estimateDiff = $b['estimate'] <=> $a['estimate'];
-                    if ($estimateDiff) {
-                        return $estimateDiff;
-                    }
-
-                    $priorityDiff = $a['priority'] <=> $b['priority'];
-                    if ($priorityDiff) {
-                        return $priorityDiff;
-                    }
-
-                    if (isset($a['completedAt']) || isset($b['completedAt'])) {
-                        $completedAtDiff = $a['completedAt'] <=> $b['completedAt'];
-                        if ($completedAtDiff) {
-                            return $completedAtDiff;
-                        }
-                    }
-
-                    return $a['createdAt'] <=> $b['createdAt'];
+        // Filter issues for this week (active states only, excluding completed before this week)
+        $thisWeekIssues = array_filter(
+            $allIssues,
+            function ($issue) use ($activeStates, $thisMonday) {
+                // Check if it's in an active state
+                if (!in_array($issue['stateName'], $activeStates, true)) {
+                    return false;
                 }
-            );
+
+                // If it's Done and has a completedAt date, only include if completed this week
+                if ('Done' === $issue['stateName'] && isset($issue['completedAt']) && is_string($issue['completedAt'])) {
+                    $completedDate = new \DateTimeImmutable($issue['completedAt']);
+
+                    return $completedDate >= $thisMonday; // Only include if completed this week
+                }
+
+                // Include all other active states (In Progress, Todo, etc.)
+                return true;
+            }
+        );
+
+        // Sort function for issues
+        $sortIssues = function (array $a, array $b): int {
+            $statePositionDiff = $a['statePosition__c'] <=> $b['statePosition__c'];
+            if ($statePositionDiff) {
+                return $statePositionDiff;
+            }
+
+            $estimateDiff = $b['estimate'] <=> $a['estimate'];
+            if ($estimateDiff) {
+                return $estimateDiff;
+            }
+
+            $priorityDiff = $a['priority'] <=> $b['priority'];
+            if ($priorityDiff) {
+                return $priorityDiff;
+            }
+
+            if (isset($a['completedAt']) || isset($b['completedAt'])) {
+                $completedAtDiff = $a['completedAt'] <=> $b['completedAt'];
+                if ($completedAtDiff) {
+                    return $completedAtDiff;
+                }
+            }
+
+            return $a['createdAt'] <=> $b['createdAt'];
+        };
+
+        // Sort both week arrays
+        usort($thisWeekIssues, $sortIssues);
+        usort($lastWeekIssues, $sortIssues);
+
+        // Build result array (Last Week first, then This Week)
+        $weeklyIssues = [];
+
+        // Add last week if there are issues
+        if (!empty($lastWeekIssues)) {
+            $weeklyIssues[] = [
+                'week' => $lastWeekLabel,
+                'issues' => $lastWeekIssues,
+            ];
         }
 
-        return $allIssuesByCycle;
+        // Add this week if there are issues
+        if (!empty($thisWeekIssues)) {
+            $weeklyIssues[] = [
+                'week' => $thisWeekLabel,
+                'issues' => $thisWeekIssues,
+            ];
+        }
+
+        return $weeklyIssues;
     }
 
     /**
-     * @param array<int, array{date: string, issues: array<int, array<string, mixed>>}> $issuesByCycle
+     * @param array<int, array{week: string, issues: array<int, array<string, mixed>>}> $weeklyIssues
      */
-    private function formatIssuesForSlack(array $issuesByCycle): string
+    private function formatIssuesForSlack(array $weeklyIssues): string
     {
         $blocks = [];
 
-        foreach ($issuesByCycle as $cycle) {
-            // Add date header
+        foreach ($weeklyIssues as $weekData) {
+            // Add week header
             $blocks[] = [
                 'type' => 'section',
                 'text' => [
                     'type' => 'mrkdwn',
-                    'text' => "*{$cycle['date']}*",
+                    'text' => "*{$weekData['week']}*",
                 ],
             ];
 
@@ -299,10 +330,10 @@ class PostWeeklyPriorities extends Command
             $issuesList = [];
             $count = 0;
             /** @var array<int, array<string, mixed>> $issues */
-            $issues = $cycle['issues'];
+            $issues = $weekData['issues'];
             foreach ($issues as $issue) {
                 $stateSymbol = isset($issue['stateSymbol']) ? $issue['stateSymbol'] : null;
-                $symbol = is_string($stateSymbol) && $stateSymbol !== '' ? $stateSymbol.' ' : '';
+                $symbol = is_string($stateSymbol) && '' !== $stateSymbol ? $stateSymbol.' ' : '';
 
                 $identifier = isset($issue['identifier']) && (is_string($issue['identifier']) || is_numeric($issue['identifier'])) ? (string) $issue['identifier'] : '';
                 $title = isset($issue['title']) && (is_string($issue['title']) || is_numeric($issue['title'])) ? (string) $issue['title'] : '';
@@ -327,8 +358,10 @@ class PostWeeklyPriorities extends Command
                 ];
             }
 
-            // Add divider between cycles
-            //            $blocks[] = ['type' => 'divider'];
+            // Add divider between weeks (optional)
+            //            if ($weekData !== end($weeklyIssues)) {
+            //                $blocks[] = ['type' => 'divider'];
+            //            }
         }
 
         return json_encode(['blocks' => $blocks]) ?: '{"blocks":[]}';

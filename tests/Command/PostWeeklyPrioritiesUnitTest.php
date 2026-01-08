@@ -18,28 +18,28 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        
+
         // Set up environment variables for testing
         putenv('LINEAR_API_KEY=test_linear_key');
         putenv('SLACK_OAUTH_TOKEN=xoxb-test-token');
         putenv('SLACK_CHANNEL_ID=C1234567890');
     }
-    
+
     protected function tearDown(): void
     {
         parent::tearDown();
-        
+
         // Clean up environment variables
         putenv('LINEAR_API_KEY');
         putenv('SLACK_OAUTH_TOKEN');
         putenv('SLACK_CHANNEL_ID');
     }
-    
+
     public function testProcessLinearDataSortsIssuesByStateAndPriority(): void
     {
         // Given: A command instance
         $command = new PostWeeklyPriorities();
-        
+
         // And: User data with issues in different states
         $userData = [
             'assignedIssues' => [
@@ -53,13 +53,7 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
                         'priority' => 3,
                         'createdAt' => '2025-11-01T10:00:00Z',
                         'completedAt' => null,
-                        'cycle' => [
-                            'startsAt' => '2025-11-04T00:00:00Z',
-                            'isActive' => true,
-                            'isNext' => false,
-                            'isPrevious' => false
-                        ],
-                        'state' => ['name' => 'Todo']
+                        'state' => ['name' => 'Todo'],
                     ],
                     [
                         'id' => '2',
@@ -70,13 +64,7 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
                         'priority' => 1,
                         'createdAt' => '2025-11-01T11:00:00Z',
                         'completedAt' => null,
-                        'cycle' => [
-                            'startsAt' => '2025-11-04T00:00:00Z',
-                            'isActive' => true,
-                            'isNext' => false,
-                            'isPrevious' => false
-                        ],
-                        'state' => ['name' => 'In Progress']
+                        'state' => ['name' => 'In Progress'],
                     ],
                     [
                         'id' => '3',
@@ -86,133 +74,148 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
                         'estimate' => 3,
                         'priority' => 2,
                         'createdAt' => '2025-11-01T09:00:00Z',
-                        'completedAt' => '2025-11-03T15:00:00Z',
-                        'cycle' => [
-                            'startsAt' => '2025-11-04T00:00:00Z',
-                            'isActive' => true,
-                            'isNext' => false,
-                            'isPrevious' => false
-                        ],
-                        'state' => ['name' => 'Done']
-                    ]
-                ]
-            ]
+                        'completedAt' => (new \DateTimeImmutable('now'))->format('Y-m-d\TH:i:s\Z'),
+                        'state' => ['name' => 'Done'],
+                    ],
+                ],
+            ],
         ];
-        
+
         // When: Processing the data
         $result = $command->processLinearData($userData);
-        
-        // Then: Should have one cycle
+
+        // Then: Should have this week with active issues
         $this->assertCount(1, $result);
-        $this->assertEquals('2025-11-04', $result[0]['date']);
-        
+        $this->assertStringContainsString('This Week', $result[0]['week']);
+
         // And: Issues should be sorted by state (Done -> In Progress -> Todo)
         $issues = $result[0]['issues'];
         $this->assertCount(3, $issues);
-        
+
         // First issue should be Done
         $this->assertEquals('TASK-3', $issues[0]['identifier']);
         $this->assertEquals('Done', $issues[0]['stateName']);
-        
+
         // Second issue should be In Progress
         $this->assertEquals('TASK-2', $issues[1]['identifier']);
         $this->assertEquals('In Progress', $issues[1]['stateName']);
-        
+
         // Third issue should be Todo
         $this->assertEquals('TASK-1', $issues[2]['identifier']);
         $this->assertEquals('Todo', $issues[2]['stateName']);
     }
-    
-    public function testProcessLinearDataFiltersOldCycles(): void
+
+    public function testProcessLinearDataSeparatesLastWeekAndThisWeek(): void
     {
         // Given: A command instance
         $command = new PostWeeklyPriorities();
-        
+
         // And: Issues from different time periods
-        $twoWeeksAgo = (new \DateTimeImmutable('-3 weeks'))->format('Y-m-d\T00:00:00\Z');
-        $lastMonday = (new \DateTimeImmutable('monday last week'))->format('Y-m-d\T00:00:00\Z');
-        $thisMonday = (new \DateTimeImmutable('monday this week'))->format('Y-m-d\T00:00:00\Z');
-        
+        $lastWeek = (new \DateTimeImmutable('wednesday last week'))->format('Y-m-d\TH:i:s\Z');
+        $twoWeeksAgo = (new \DateTimeImmutable('-2 weeks'))->format('Y-m-d\TH:i:s\Z');
+
         $userData = [
             'assignedIssues' => [
                 'nodes' => [
                     [
                         'id' => 'old',
                         'identifier' => 'OLD-1',
-                        'title' => 'Very old issue',
+                        'title' => 'Very old completed issue',
                         'url' => 'https://linear.app/test/issue/OLD-1',
                         'estimate' => 1,
                         'priority' => 1,
                         'createdAt' => '2025-10-01T10:00:00Z',
-                        'cycle' => ['startsAt' => $twoWeeksAgo],
-                        'state' => ['name' => 'Done']
+                        'completedAt' => $twoWeeksAgo,
+                        'state' => ['name' => 'Done'],
                     ],
                     [
-                        'id' => 'recent',
-                        'identifier' => 'RECENT-1',
-                        'title' => 'Last week issue',
-                        'url' => 'https://linear.app/test/issue/RECENT-1',
+                        'id' => 'lastweek',
+                        'identifier' => 'LASTWEEK-1',
+                        'title' => 'Last week completed issue',
+                        'url' => 'https://linear.app/test/issue/LASTWEEK-1',
                         'estimate' => 1,
                         'priority' => 1,
                         'createdAt' => '2025-11-01T10:00:00Z',
-                        'cycle' => ['startsAt' => $lastMonday],
-                        'state' => ['name' => 'Done']
+                        'completedAt' => $lastWeek,
+                        'state' => ['name' => 'Done'],
                     ],
                     [
                         'id' => 'current',
                         'identifier' => 'CURRENT-1',
-                        'title' => 'This week issue',
+                        'title' => 'This week in progress',
                         'url' => 'https://linear.app/test/issue/CURRENT-1',
                         'estimate' => 1,
                         'priority' => 1,
                         'createdAt' => '2025-11-04T10:00:00Z',
-                        'cycle' => ['startsAt' => $thisMonday],
-                        'state' => ['name' => 'In Progress']
-                    ]
-                ]
-            ]
+                        'state' => ['name' => 'In Progress'],
+                    ],
+                    [
+                        'id' => 'backlog',
+                        'identifier' => 'BACKLOG-1',
+                        'title' => 'Backlog item',
+                        'url' => 'https://linear.app/test/issue/BACKLOG-1',
+                        'estimate' => 1,
+                        'priority' => 1,
+                        'createdAt' => '2025-11-04T10:00:00Z',
+                        'state' => ['name' => 'Backlog'],
+                    ],
+                ],
+            ],
         ];
-        
+
         // When: Processing the data
         $result = $command->processLinearData($userData);
-        
-        // Then: Should include last week and this week, but not older
+
+        // Then: Should have two weeks
+        $this->assertCount(2, $result);
+
+        // Last week should be first and contain only last week's completed issue
+        $lastWeekData = $result[0];
+        $this->assertStringContainsString('Last Week', $lastWeekData['week']);
+        $this->assertCount(1, $lastWeekData['issues']);
+        $this->assertEquals('LASTWEEK-1', $lastWeekData['issues'][0]['identifier']);
+
+        // This week should be second and contain current in-progress issue
+        $thisWeek = $result[1];
+        $this->assertStringContainsString('This Week', $thisWeek['week']);
+        $this->assertCount(1, $thisWeek['issues']);
+        $this->assertEquals('CURRENT-1', $thisWeek['issues'][0]['identifier']);
+
+        // Old completed issue and backlog should not appear
         $allIdentifiers = [];
-        foreach ($result as $cycle) {
-            foreach ($cycle['issues'] as $issue) {
+        foreach ($result as $week) {
+            foreach ($week['issues'] as $issue) {
                 $allIdentifiers[] = $issue['identifier'];
             }
         }
-        
-        $this->assertContains('RECENT-1', $allIdentifiers);
-        $this->assertContains('CURRENT-1', $allIdentifiers);
         $this->assertNotContains('OLD-1', $allIdentifiers);
+        $this->assertNotContains('BACKLOG-1', $allIdentifiers);
     }
-    
+
     public function testProcessLinearDataHandlesEmptyAssignedIssues(): void
     {
         // Given: A command instance
         $command = new PostWeeklyPriorities();
-        
+
         // And: User data with no assigned issues
         $userData = [
             'assignedIssues' => [
-                'nodes' => []
-            ]
+                'nodes' => [],
+            ],
         ];
-        
+
         // When: Processing the data
         $result = $command->processLinearData($userData);
-        
+
         // Then: Should return empty array
         $this->assertEmpty($result);
     }
-    
+
     public function testProcessLinearDataHandlesMissingFields(): void
     {
         // Given: A command instance
         $command = new PostWeeklyPriorities();
-        
+
         // And: User data with issues missing optional fields
         $userData = [
             'assignedIssues' => [
@@ -220,24 +223,27 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
                     [
                         'id' => '1',
                         'identifier' => 'TASK-1',
-                        'title' => 'Task without cycle',
+                        'title' => 'Task without estimate',
                         'url' => 'https://linear.app/test/issue/TASK-1',
                         'priority' => 1,
                         'createdAt' => '2025-11-01T10:00:00Z',
-                        'state' => ['name' => 'Todo']
-                        // Note: no cycle, no estimate, no completedAt
-                    ]
-                ]
-            ]
+                        'state' => ['name' => 'Todo'],
+                        // Note: no estimate, no completedAt
+                    ],
+                ],
+            ],
         ];
-        
+
         // When: Processing the data
         $result = $command->processLinearData($userData);
-        
-        // Then: Should handle gracefully (no cycle means it won't be included)
-        $this->assertEmpty($result); // No cycle date means it won't be grouped
+
+        // Then: Should handle gracefully and include the Todo task in this week
+        $this->assertCount(1, $result);
+        $this->assertStringContainsString('This Week', $result[0]['week']);
+        $this->assertCount(1, $result[0]['issues']);
+        $this->assertEquals('TASK-1', $result[0]['issues'][0]['identifier']);
     }
-    
+
     public function testDryRunDoesNotMakeHttpCalls(): void
     {
         // Given: A mock handler that will throw if called
@@ -257,65 +263,61 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
                                     'estimate' => 1,
                                     'priority' => 1,
                                     'createdAt' => '2025-11-01T10:00:00Z',
-                                    'cycle' => [
-                                        'startsAt' => '2025-11-04T00:00:00Z',
-                                        'isActive' => true
-                                    ],
-                                    'state' => ['name' => 'In Progress']
-                                ]
-                            ]
-                        ]
-                    ]
-                ]
-            ]))
+                                    'state' => ['name' => 'In Progress'],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
         ]);
-        
+
         $handlerStack = HandlerStack::create($mockHandler);
         $mockClient = new Client(['handler' => $handlerStack]);
-        
+
         // And: A command with the mocked client
         $command = new PostWeeklyPriorities($mockClient);
-        
+
         $application = new Application();
         $application->add($command);
-        
+
         $commandTester = new CommandTester($command);
-        
+
         // When: Running with dry-run
         $commandTester->execute(['--dry-run' => true]);
-        
+
         // Then: Should complete successfully
         $this->assertEquals(0, $commandTester->getStatusCode());
-        
+
         // And: Output should indicate dry run
         $output = $commandTester->getDisplay();
         $this->assertStringContainsString('Dry Run', $output);
-        
+
         // And: Mock handler should have been called exactly once (for Linear API)
         $this->assertEquals(0, $mockHandler->count(), 'One request should have been made');
     }
-    
+
     public function testMissingEnvironmentVariablesReturnError(): void
     {
         // Given: No environment variables
         putenv('LINEAR_API_KEY');
         putenv('SLACK_OAUTH_TOKEN');
         putenv('SLACK_CHANNEL_ID');
-        
+
         // And: A command
         $command = new PostWeeklyPriorities();
-        
+
         $application = new Application();
         $application->add($command);
-        
+
         $commandTester = new CommandTester($command);
-        
+
         // When: Running the command
         $commandTester->execute([]);
-        
+
         // Then: Should return failure
         $this->assertEquals(1, $commandTester->getStatusCode());
-        
+
         // And: Should show error message
         $output = $commandTester->getDisplay();
         $this->assertStringContainsString('Missing required configuration', $output);
