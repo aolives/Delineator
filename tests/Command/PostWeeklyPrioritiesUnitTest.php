@@ -86,7 +86,8 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
 
         // Then: Should have this week with active issues
         $this->assertCount(1, $result);
-        $this->assertStringContainsString('This Week', $result[0]['week']);
+        // Week label should be a date in YYYY-MM-DD format
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $result[0]['week']);
 
         // And: Issues should be sorted by state (Done -> In Progress -> Todo)
         $issues = $result[0]['issues'];
@@ -171,13 +172,15 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
 
         // Last week should be first and contain only last week's completed issue
         $lastWeekData = $result[0];
-        $this->assertStringContainsString('Last Week', $lastWeekData['week']);
+        // Week label should be a date in YYYY-MM-DD format (last Monday)
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $lastWeekData['week']);
         $this->assertCount(1, $lastWeekData['issues']);
         $this->assertEquals('LASTWEEK-1', $lastWeekData['issues'][0]['identifier']);
 
         // This week should be second and contain current in-progress issue
         $thisWeek = $result[1];
-        $this->assertStringContainsString('This Week', $thisWeek['week']);
+        // Week label should be a date in YYYY-MM-DD format (this Monday)
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $thisWeek['week']);
         $this->assertCount(1, $thisWeek['issues']);
         $this->assertEquals('CURRENT-1', $thisWeek['issues'][0]['identifier']);
 
@@ -239,7 +242,8 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
 
         // Then: Should handle gracefully and include the Todo task in this week
         $this->assertCount(1, $result);
-        $this->assertStringContainsString('This Week', $result[0]['week']);
+        // Week label should be a date in YYYY-MM-DD format
+        $this->assertMatchesRegularExpression('/^\d{4}-\d{2}-\d{2}$/', $result[0]['week']);
         $this->assertCount(1, $result[0]['issues']);
         $this->assertEquals('TASK-1', $result[0]['issues'][0]['identifier']);
     }
