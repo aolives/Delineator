@@ -8,12 +8,12 @@
         "ext-ctype": "*",
         "ext-iconv": "*",
         "guzzlehttp/guzzle": "^7.10",
-        "symfony/console": "7.3.*",
-        "symfony/dotenv": "7.3.*",
+        "symfony/console": "^7.4.3",
+        "symfony/dotenv": "^7.4",
         "symfony/flex": "^2.10",
-        "symfony/framework-bundle": "7.3.*",
-        "symfony/runtime": "7.3.*",
-        "symfony/yaml": "7.3.*"
+        "symfony/framework-bundle": "^7.4.3",
+        "symfony/runtime": "^7.4.1",
+        "symfony/yaml": "^7.4.1"
     },
     "config": {
         "allow-plugins": {
@@ -63,7 +63,7 @@
     "extra": {
         "symfony": {
             "allow-contrib": true,
-            "require": "7.3.*"
+            "require": "7.*"
         }
     },
     "require-dev": {
@@ -71,8 +71,8 @@
         "phpstan/extension-installer": "^1.4.3",
         "phpstan/phpstan-symfony": "^2.0.9",
         "phpunit/phpunit": "^12.5.4",
-        "symfony/browser-kit": "7.3.*",
-        "symfony/css-selector": "7.3.*",
-        "symfony/phpunit-bridge": "^8.0"
+        "symfony/browser-kit": "^7.4.3",
+        "symfony/css-selector": "^7.4",
+        "symfony/phpunit-bridge": "^8.0.3"
     }
 }
