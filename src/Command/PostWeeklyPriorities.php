@@ -18,15 +18,13 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 )]
 class PostWeeklyPriorities extends Command
 {
-    private ?Client $httpClient = null;
     private string $slackToken;
     private string $channelId;
     private string $linearApiKey;
 
-    public function __construct(?Client $httpClient = null)
+    public function __construct(private ?Client $httpClient = null)
     {
         parent::__construct();
-        $this->httpClient = $httpClient;
     }
 
     protected function configure(): void
@@ -171,43 +169,41 @@ class PostWeeklyPriorities extends Command
             /** @param array<string, mixed> $issue
              * @return array<string, mixed>
              */
-            function (array $issue): array {
-                return [
-                    'id' => $issue['id'],
-                    'identifier' => $issue['identifier'],
-                    'title' => $issue['title'],
-                    'url' => $issue['url'],
-                    'estimate' => $issue['estimate'] ?? null,
-                    'priority' => $issue['priority'],
-                    'createdAt' => isset($issue['createdAt']) && is_string($issue['createdAt']) ? (new \DateTimeImmutable($issue['createdAt']))->format('Y-m-d H:i:s') : null,
-                    'completedAt' => isset($issue['completedAt']) && is_string($issue['completedAt']) ? (new \DateTimeImmutable($issue['completedAt']))->format('Y-m-d H:i:s') : null,
-                    'stateName' => isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '',
-                    'statePosition__c' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
-                        'Done' => 0,
-                        'In Review' => 1,
-                        'In Progress' => 2,
-                        'Pending' => 3,
-                        'Todo' => 4,
-                        'Backlog' => 5,
-                        'Triage' => 6,
-                        'Canceled' => 8,
-                        'Duplicate' => 9,
-                        default => 100,
-                    },
-                    'stateSymbol' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
-                        'Done' => 'done_linear',
-                        'In Review' => 'in_review_linear',
-                        'In Progress' => 'in_progress_linear',
-                        'Pending' => 'blocked',
-                        'Todo' => 'todo_linear',
-                        'Backlog' => 'backlog_linear',
-                        'Triage' => 'triage_linear',
-                        'Canceled' => 'canceled_linear',
-                        'Duplicate' => 'clown_face',
-                        default => null,
-                    },
-                ];
-            },
+            fn(array $issue): array => [
+                'id' => $issue['id'],
+                'identifier' => $issue['identifier'],
+                'title' => $issue['title'],
+                'url' => $issue['url'],
+                'estimate' => $issue['estimate'] ?? null,
+                'priority' => $issue['priority'],
+                'createdAt' => isset($issue['createdAt']) && is_string($issue['createdAt']) ? new \DateTimeImmutable($issue['createdAt'])->format('Y-m-d H:i:s') : null,
+                'completedAt' => isset($issue['completedAt']) && is_string($issue['completedAt']) ? new \DateTimeImmutable($issue['completedAt'])->format('Y-m-d H:i:s') : null,
+                'stateName' => isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '',
+                'statePosition__c' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
+                    'Done' => 0,
+                    'In Review' => 1,
+                    'In Progress' => 2,
+                    'Pending' => 3,
+                    'Todo' => 4,
+                    'Backlog' => 5,
+                    'Triage' => 6,
+                    'Canceled' => 8,
+                    'Duplicate' => 9,
+                    default => 100,
+                },
+                'stateSymbol' => match (isset($issue['state']) && is_array($issue['state']) && isset($issue['state']['name']) && is_string($issue['state']['name']) ? $issue['state']['name'] : '') {
+                    'Done' => 'done_linear',
+                    'In Review' => 'in_review_linear',
+                    'In Progress' => 'in_progress_linear',
+                    'Pending' => 'blocked',
+                    'Todo' => 'todo_linear',
+                    'Backlog' => 'backlog_linear',
+                    'Triage' => 'triage_linear',
+                    'Canceled' => 'canceled_linear',
+                    'Duplicate' => 'clown_face',
+                    default => null,
+                },
+            ],
             $nodes
         );
 
@@ -333,7 +329,7 @@ class PostWeeklyPriorities extends Command
             /** @var array<int, array<string, mixed>> $issues */
             $issues = $weekData['issues'];
             foreach ($issues as $issue) {
-                $stateSymbol = isset($issue['stateSymbol']) ? $issue['stateSymbol'] : null;
+                $stateSymbol = $issue['stateSymbol'] ?? null;
                 $identifier = isset($issue['identifier']) && (is_string($issue['identifier']) || is_numeric($issue['identifier'])) ? (string) $issue['identifier'] : '';
                 $title = isset($issue['title']) && (is_string($issue['title']) || is_numeric($issue['title'])) ? (string) $issue['title'] : '';
 
