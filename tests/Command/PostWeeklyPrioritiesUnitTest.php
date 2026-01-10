@@ -74,7 +74,7 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
                         'estimate' => 3,
                         'priority' => 2,
                         'createdAt' => '2025-11-01T09:00:00Z',
-                        'completedAt' => (new \DateTimeImmutable('now'))->format('Y-m-d\TH:i:s\Z'),
+                        'completedAt' => new \DateTimeImmutable('now')->format('Y-m-d\TH:i:s\Z'),
                         'state' => ['name' => 'Done'],
                     ],
                 ],
@@ -112,8 +112,8 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $command = new PostWeeklyPriorities();
 
         // And: Issues from different time periods
-        $lastWeek = (new \DateTimeImmutable('wednesday last week'))->format('Y-m-d\TH:i:s\Z');
-        $twoWeeksAgo = (new \DateTimeImmutable('-2 weeks'))->format('Y-m-d\TH:i:s\Z');
+        $lastWeek = new \DateTimeImmutable('wednesday last week')->format('Y-m-d\TH:i:s\Z');
+        $twoWeeksAgo = new \DateTimeImmutable('-2 weeks')->format('Y-m-d\TH:i:s\Z');
 
         $userData = [
             'assignedIssues' => [
@@ -283,7 +283,7 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $command = new PostWeeklyPriorities($mockClient);
 
         $application = new Application();
-        $application->add($command);
+        $application->addCommand($command);
 
         $commandTester = new CommandTester($command);
 
@@ -328,7 +328,6 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         // When: Formatting for Slack
         $reflectionClass = new \ReflectionClass(PostWeeklyPriorities::class);
         $method = $reflectionClass->getMethod('formatIssuesForSlack');
-        $method->setAccessible(true);
         $result = $method->invoke($command, $weeklyIssues);
 
         // Then: Should return valid JSON
@@ -402,7 +401,7 @@ class PostWeeklyPrioritiesUnitTest extends TestCase
         $command = new PostWeeklyPriorities();
 
         $application = new Application();
-        $application->add($command);
+        $application->addCommand($command);
 
         $commandTester = new CommandTester($command);
 
