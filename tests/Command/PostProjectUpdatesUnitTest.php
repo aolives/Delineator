@@ -551,4 +551,239 @@ class PostProjectUpdatesUnitTest extends TestCase
         // Only 1 response consumed (projects query), no issues/claude/mutation calls
         $this->assertEquals(0, $mockHandler->count());
     }
+
+    public function testNewProjectWithNoIssuesGetsPlanningMessage(): void
+    {
+        $mockHandler = new MockHandler([
+            // Projects query — no previous updates
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'projects' => [
+                        'nodes' => [
+                            [
+                                'id' => 'proj-1',
+                                'name' => 'Brand New Project',
+                                'projectUpdates' => [
+                                    'nodes' => [],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            // Issues query returns empty
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'project' => [
+                        'issues' => [
+                            'nodes' => [],
+                        ],
+                    ],
+                ],
+            ])),
+        ]);
+
+        $handlerStack = HandlerStack::create($mockHandler);
+        $mockClient = new Client(['handler' => $handlerStack]);
+
+        $command = new PostProjectUpdates($mockClient);
+        $application = new Application();
+        $application->addCommand($command);
+        $commandTester = new CommandTester($command);
+
+        $commandTester->execute(['--dry-run' => true]);
+
+        $this->assertEquals(0, $commandTester->getStatusCode());
+        $output = $commandTester->getDisplay();
+        $this->assertStringContainsString('planning', $output);
+        $this->assertEquals(0, $mockHandler->count());
+    }
+
+    public function testTemplateFallbackWhenAnthropicKeyMissing(): void
+    {
+        putenv('ANTHROPIC_API_KEY');
+
+        $mockHandler = new MockHandler([
+            // Projects query
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'projects' => [
+                        'nodes' => [
+                            [
+                                'id' => 'proj-1',
+                                'name' => 'No Key Project',
+                                'projectUpdates' => [
+                                    'nodes' => [
+                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            // Issues query
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'project' => [
+                        'issues' => [
+                            'nodes' => [
+                                [
+                                    'identifier' => 'NOKEY-1',
+                                    'title' => 'Some work',
+                                    'state' => ['name' => 'Done'],
+                                    'assignee' => ['name' => 'Alice'],
+                                    'labels' => ['nodes' => []],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+        ]);
+
+        $handlerStack = HandlerStack::create($mockHandler);
+        $mockClient = new Client(['handler' => $handlerStack]);
+
+        $command = new PostProjectUpdates($mockClient);
+        $application = new Application();
+        $application->addCommand($command);
+        $commandTester = new CommandTester($command);
+
+        $commandTester->execute(['--dry-run' => true]);
+
+        $this->assertEquals(0, $commandTester->getStatusCode());
+        $output = $commandTester->getDisplay();
+        // Should use template fallback (mentions completed items)
+        $this->assertStringContainsString('Completed 1 item', $output);
+        // Should warn about missing key
+        $this->assertStringContainsString('ANTHROPIC_API_KEY not set', $output);
+        // Only 2 responses consumed (projects + issues), no Claude call
+        $this->assertEquals(0, $mockHandler->count());
+    }
+
+    public function testEmptyClaudeResponseFallsBackToTemplate(): void
+    {
+        $mockHandler = new MockHandler([
+            // Projects query
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'projects' => [
+                        'nodes' => [
+                            [
+                                'id' => 'proj-1',
+                                'name' => 'Empty Response Project',
+                                'projectUpdates' => [
+                                    'nodes' => [
+                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            // Issues query
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'project' => [
+                        'issues' => [
+                            'nodes' => [
+                                [
+                                    'identifier' => 'EMPTY-1',
+                                    'title' => 'A task',
+                                    'state' => ['name' => 'In Progress'],
+                                    'assignee' => ['name' => 'Bob'],
+                                    'labels' => ['nodes' => []],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            // Claude API returns empty content
+            new Response(200, [], (string) json_encode([
+                'content' => [],
+            ])),
+        ]);
+
+        $handlerStack = HandlerStack::create($mockHandler);
+        $mockClient = new Client(['handler' => $handlerStack]);
+
+        $command = new PostProjectUpdates($mockClient);
+        $application = new Application();
+        $application->addCommand($command);
+        $commandTester = new CommandTester($command);
+
+        $commandTester->execute(['--dry-run' => true]);
+
+        $this->assertEquals(0, $commandTester->getStatusCode());
+        $output = $commandTester->getDisplay();
+        // Should fall back to template
+        $this->assertStringContainsString('template fallback', $output);
+        $this->assertStringContainsString('in progress', $output);
+    }
+
+    public function testOneProjectFailureDoesNotAbortOthers(): void
+    {
+        $mockHandler = new MockHandler([
+            // Projects query — two projects
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'projects' => [
+                        'nodes' => [
+                            [
+                                'id' => 'proj-bad',
+                                'name' => 'Failing Project',
+                                'projectUpdates' => [
+                                    'nodes' => [
+                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                    ],
+                                ],
+                            ],
+                            [
+                                'id' => 'proj-good',
+                                'name' => 'Good Project',
+                                'projectUpdates' => [
+                                    'nodes' => [
+                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            // Issues query for first project — network error
+            new ConnectException('Connection refused', new Request('POST', 'https://api.linear.app/graphql')),
+            // Issues query for second project — success with no issues
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'project' => [
+                        'issues' => [
+                            'nodes' => [],
+                        ],
+                    ],
+                ],
+            ])),
+        ]);
+
+        $handlerStack = HandlerStack::create($mockHandler);
+        $mockClient = new Client(['handler' => $handlerStack]);
+
+        $command = new PostProjectUpdates($mockClient);
+        $application = new Application();
+        $application->addCommand($command);
+        $commandTester = new CommandTester($command);
+
+        $commandTester->execute(['--dry-run' => true]);
+
+        // Should return FAILURE because one project failed
+        $this->assertEquals(1, $commandTester->getStatusCode());
+        $output = $commandTester->getDisplay();
+        // First project should show error
+        $this->assertStringContainsString('Failed to process Failing Project', $output);
+        // Second project should still be processed
+        $this->assertStringContainsString('Good Project', $output);
+    }
 }

@@ -65,49 +65,57 @@ class PostProjectUpdates extends Command
         try {
             $io->section('Fetching in-progress projects...');
             $projects = $this->fetchProjects();
+        } catch (\Exception $e) {
+            $io->error('Error fetching projects: '.$e->getMessage());
 
-            if ([] === $projects) {
-                $io->info('No in-progress projects found.');
+            return Command::FAILURE;
+        }
 
-                return Command::SUCCESS;
-            }
+        if ([] === $projects) {
+            $io->info('No in-progress projects found.');
 
-            $quietMessages = [
-                'Quiet week on this project. Work continues as planned.',
-                'No big updates — everything is tracking smoothly.',
-                'Business as usual this week. On track.',
-                'All good here — plugging along as planned.',
-                'Nothing new to report. Steady as she goes.',
-                'Low activity this week, everything on track.',
-                'Smooth sailing — work continues in the background.',
-                'No updates needed — things are humming along.',
-                'Ticking along nicely. More to share next week.',
-                'Cruising along — no blockers, no surprises.',
-                'Steady week — everything moving as expected.',
-                'Nothing to flag. Work is progressing normally.',
-                'On track, no changes to report.',
-                'Chugging along — more updates next time.',
-                'Quiet stretch, but things are in good shape.',
-                'Holding steady. Will have more to share soon.',
-                'Everything is on track. Business as usual.',
-                'Moving along as planned — nothing to call out.',
-                'Progressing as expected — no surprises this week.',
-                'Keeping the wheels turning. Nothing new to report.',
-                'Status quo this week. All good.',
-                'Heads down, making progress. More next week.',
-                'Things are humming along nicely.',
-                'Staying the course — everything on track.',
-                'All quiet on this front. Moving forward.',
-            ];
-            shuffle($quietMessages);
-            $quietMessageIndex = 0;
+            return Command::SUCCESS;
+        }
 
-            foreach ($projects as $project) {
-                $projectId = is_scalar($project['id'] ?? null) ? (string) $project['id'] : '';
-                $projectName = is_scalar($project['name'] ?? null) ? (string) $project['name'] : '';
-                $projectDescription = is_scalar($project['description'] ?? null) ? (string) $project['description'] : '';
-                $io->section("Processing: {$projectName}");
+        $quietMessages = [
+            'Quiet week on this project. Work continues as planned.',
+            'No big updates — everything is tracking smoothly.',
+            'Business as usual this week. On track.',
+            'All good here — plugging along as planned.',
+            'Nothing new to report. Steady as she goes.',
+            'Low activity this week, everything on track.',
+            'Smooth sailing — work continues in the background.',
+            'No updates needed — things are humming along.',
+            'Ticking along nicely. More to share next week.',
+            'Cruising along — no blockers, no surprises.',
+            'Steady week — everything moving as expected.',
+            'Nothing to flag. Work is progressing normally.',
+            'On track, no changes to report.',
+            'Chugging along — more updates next time.',
+            'Quiet stretch, but things are in good shape.',
+            'Holding steady. Will have more to share soon.',
+            'Everything is on track. Business as usual.',
+            'Moving along as planned — nothing to call out.',
+            'Progressing as expected — no surprises this week.',
+            'Keeping the wheels turning. Nothing new to report.',
+            'Status quo this week. All good.',
+            'Heads down, making progress. More next week.',
+            'Things are humming along nicely.',
+            'Staying the course — everything on track.',
+            'All quiet on this front. Moving forward.',
+        ];
+        shuffle($quietMessages);
+        $quietMessageIndex = 0;
 
+        $failures = 0;
+
+        foreach ($projects as $project) {
+            $projectId = is_scalar($project['id'] ?? null) ? (string) $project['id'] : '';
+            $projectName = is_scalar($project['name'] ?? null) ? (string) $project['name'] : '';
+            $projectDescription = is_scalar($project['description'] ?? null) ? (string) $project['description'] : '';
+            $io->section("Processing: {$projectName}");
+
+            try {
                 // Determine baseline date from last project update
                 /** @var array<string, mixed> $projectUpdates */
                 $projectUpdates = is_array($project['projectUpdates'] ?? null) ? $project['projectUpdates'] : [];
@@ -165,22 +173,27 @@ class PostProjectUpdates extends Command
                     $this->postProjectUpdate($projectId, $body, $health);
                     $io->success("Successfully posted update for {$projectName} (health: {$health})");
                 }
+            } catch (\Exception $e) {
+                ++$failures;
+                $io->error("Failed to process {$projectName}: {$e->getMessage()}");
             }
-
-            return Command::SUCCESS;
-        } catch (\Exception $e) {
-            $io->error('Error: '.$e->getMessage());
-
-            return Command::FAILURE;
         }
+
+        return $failures > 0 ? Command::FAILURE : Command::SUCCESS;
     }
 
     /**
+     * @param array<string, mixed> $variables
+     *
      * @return array<string, mixed>
      */
-    private function executeGraphQLQuery(string $query): array
+    private function executeGraphQLQuery(string $query, array $variables = []): array
     {
-        $body = json_encode(['query' => $query]);
+        $payload = ['query' => $query];
+        if ([] !== $variables) {
+            $payload['variables'] = $variables;
+        }
+        $body = json_encode($payload);
         assert($this->httpClient instanceof Client);
         $response = $this->httpClient->request('POST', 'https://api.linear.app/graphql', [
             'headers' => [
@@ -245,15 +258,12 @@ class PostProjectUpdates extends Command
      */
     private function fetchProjectIssues(string $projectId, string $since): array
     {
-        $escapedProjectId = addslashes($projectId);
-        $escapedSince = addslashes($since);
-
-        $query = <<<GRAPHQL
-        query {
-          project(id: "{$escapedProjectId}") {
+        $query = <<<'GRAPHQL'
+        query($projectId: String!, $since: DateTime!) {
+          project(id: $projectId) {
             issues(
               first: 100,
-              filter: { updatedAt: { gte: "{$escapedSince}" } }
+              filter: { updatedAt: { gte: $since } }
             ) {
               nodes {
                 identifier
@@ -275,7 +285,10 @@ class PostProjectUpdates extends Command
         }
         GRAPHQL;
 
-        $data = $this->executeGraphQLQuery($query);
+        $data = $this->executeGraphQLQuery($query, [
+            'projectId' => $projectId,
+            'since' => $since,
+        ]);
 
         if (!isset($data['data']) || !is_array($data['data'])) {
             return [];
@@ -380,6 +393,10 @@ class PostProjectUpdates extends Command
             }
         }
 
+        if ('' === $text) {
+            throw new \RuntimeException('Claude API returned no text content.');
+        }
+
         // Strip markdown code fences if present
         $text = preg_replace('/^```(?:json)?\s*\n?/', '', $text) ?? $text;
         $text = preg_replace('/\n?```\s*$/', '', $text) ?? $text;
@@ -387,7 +404,7 @@ class PostProjectUpdates extends Command
         /** @var array{body?: string, health?: string}|null $parsed */
         $parsed = json_decode($text, true);
 
-        if (is_array($parsed) && is_string($parsed['body'] ?? null)) {
+        if (is_array($parsed) && is_string($parsed['body'] ?? null) && '' !== $parsed['body']) {
             $health = is_string($parsed['health'] ?? null) && in_array($parsed['health'], ['onTrack', 'atRisk', 'offTrack'], true)
                 ? $parsed['health']
                 : 'onTrack';
@@ -395,8 +412,12 @@ class PostProjectUpdates extends Command
             return ['body' => $parsed['body'], 'health' => $health];
         }
 
-        // Fallback: use raw text as body
-        return ['body' => $text, 'health' => 'onTrack'];
+        // If we got text but couldn't parse valid JSON with a body, use the raw text
+        if ('' !== trim($text)) {
+            return ['body' => $text, 'health' => 'onTrack'];
+        }
+
+        throw new \RuntimeException('Claude API returned empty body after parsing.');
     }
 
     /**
@@ -442,16 +463,12 @@ class PostProjectUpdates extends Command
 
     private function postProjectUpdate(string $projectId, string $body, string $health): void
     {
-        $escapedProjectId = addslashes($projectId);
-        $escapedBody = str_replace(['\\', '"', "\n"], ['\\\\', '\\"', '\\n'], $body);
-        $escapedHealth = addslashes($health);
-
-        $mutation = <<<GRAPHQL
-        mutation {
+        $mutation = <<<'GRAPHQL'
+        mutation($projectId: String!, $body: String!, $health: String!) {
           projectUpdateCreate(input: {
-            projectId: "{$escapedProjectId}",
-            body: "{$escapedBody}",
-            health: {$escapedHealth}
+            projectId: $projectId,
+            body: $body,
+            health: $health
           }) {
             success
             projectUpdate {
@@ -461,7 +478,11 @@ class PostProjectUpdates extends Command
         }
         GRAPHQL;
 
-        $data = $this->executeGraphQLQuery($mutation);
+        $data = $this->executeGraphQLQuery($mutation, [
+            'projectId' => $projectId,
+            'body' => $body,
+            'health' => $health,
+        ]);
 
         /** @var array<string, mixed> $dataArray */
         $dataArray = is_array($data['data'] ?? null) ? $data['data'] : [];
