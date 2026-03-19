@@ -4,6 +4,14 @@
 
 Runs the `post:priorities` command every Monday to post a weekly priorities update to Slack.
 
+### How it works
+
+1. Fetches issues completed since last Monday and currently active issues (Todo, In Progress, In Review) from Linear via the `viewer` query
+2. Separates issues into "last week" (completed) and "this week" (active) groups
+3. Sorts by state, estimate, and priority
+4. Formats as a rich text Slack message with status emojis and blocker details
+5. Finds the weekly priorities thread in the channel and posts as a reply
+
 ### Schedule
 
 Mondays at 12:00 UTC (5 AM PDT / 4 AM PST) — always done before 8 AM regardless of DST.
