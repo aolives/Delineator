@@ -1,0 +1,46 @@
+name: Weekly Project Updates
+
+on:
+  schedule:
+    # Run every Friday at 2 PM UTC = 7 AM PDT / 6 AM PST
+    - cron: '0 14 * * 5'
+
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  run-project-updates:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: ctype, iconv
+          coverage: none
+
+      - name: Get Composer Cache Directory
+        id: composer-cache
+        run: echo "dir=$(composer config cache-files-dir)" >> $GITHUB_OUTPUT
+
+      - name: Cache Composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ steps.composer-cache.outputs.dir }}
+          key: ${{ runner.os }}-composer-${{ hashFiles('**/composer.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-composer-
+
+      - name: Install dependencies
+        run: composer install --no-progress --prefer-dist --optimize-autoloader
+
+      - name: Run post:project-updates command
+        run: php bin/console post:project-updates
+        env:
+          APP_ENV: prod
+          LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
