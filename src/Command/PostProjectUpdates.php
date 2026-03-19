@@ -135,7 +135,7 @@ class PostProjectUpdates extends Command
                     $baselineDate = $lastUpdateNodes[0]['createdAt'];
                     $previousBody = is_string($lastUpdateNodes[0]['body'] ?? null) ? $lastUpdateNodes[0]['body'] : '';
                 } else {
-                    $baselineDate = new \DateTimeImmutable('-7 days')->format('Y-m-d\TH:i:s.v\Z');
+                    $baselineDate = new \DateTimeImmutable('-7 days', new \DateTimeZone('UTC'))->format('Y-m-d\TH:i:s.v\Z');
                 }
 
                 $issues = $this->fetchProjectIssues($projectId, $baselineDate);
@@ -290,8 +290,17 @@ class PostProjectUpdates extends Command
             'since' => $since,
         ]);
 
-        if (!isset($data['data']) || !is_array($data['data'])) {
-            return [];
+        if (!empty($data['errors'])) {
+            /** @var array<int, array<string, mixed>> $errors */
+            $errors = is_array($data['errors']) ? $data['errors'] : [];
+            $errorMessage = isset($errors[0]) && is_string($errors[0]['message'] ?? null)
+                ? $errors[0]['message']
+                : 'Unknown GraphQL error';
+            throw new \RuntimeException('GraphQL error fetching issues: '.$errorMessage);
+        }
+
+        if (!isset($data['data']) || !is_array($data['data']) || !isset($data['data']['project'])) {
+            throw new \RuntimeException('Unexpected response fetching issues: missing project data.');
         }
 
         /** @var array<string, mixed> $dataArray */
