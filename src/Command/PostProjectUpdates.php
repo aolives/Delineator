@@ -271,7 +271,7 @@ class PostProjectUpdates extends Command
     private function fetchProjectIssues(string $projectId, string $since): array
     {
         $query = <<<'GRAPHQL'
-        query($projectId: String!, $since: DateTime!) {
+        query($projectId: String!, $since: DateTimeOrDuration!) {
           project(id: $projectId) {
             issues(
               first: 100,
