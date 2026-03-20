@@ -450,16 +450,14 @@ class PostProjectUpdates extends Command
     {
         $completed = [];
         $inProgress = [];
-        $other = [];
 
         foreach ($issues as $issue) {
-            $title = is_scalar($issue['title'] ?? null) ? (string) $issue['title'] : '';
             $state = is_array($issue['state'] ?? null) && is_string($issue['state']['name'] ?? null) ? $issue['state']['name'] : 'Unknown';
 
             match ($state) {
-                'Done' => $completed[] = $title,
-                'In Progress', 'In Review' => $inProgress[] = $title,
-                default => $other[] = $title,
+                'Done' => $completed[] = true,
+                'In Progress', 'In Review' => $inProgress[] = true,
+                default => null,
             };
         }
 
