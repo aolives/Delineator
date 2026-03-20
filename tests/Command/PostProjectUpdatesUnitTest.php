@@ -304,7 +304,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Quiet Project',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Last week we made good progress.'],
                                     ],
                                 ],
                             ],
@@ -338,6 +338,8 @@ class PostProjectUpdatesUnitTest extends TestCase
         $output = $commandTester->getDisplay();
         $this->assertStringContainsString('Quiet Project', $output);
         $this->assertStringContainsString('onTrack', $output);
+        // Should NOT contain the planning message
+        $this->assertStringNotContainsString('planning', $output);
         // Only 2 responses consumed (projects + issues), no Claude call
         $this->assertEquals(0, $mockHandler->count());
     }
