@@ -59,7 +59,10 @@ class PostProjectUpdates extends Command
         }
 
         if (!$this->httpClient instanceof Client) {
-            $this->httpClient = new Client();
+            $this->httpClient = new Client([
+                'connect_timeout' => 10,
+                'timeout' => 30,
+            ]);
         }
 
         try {
@@ -124,7 +127,7 @@ class PostProjectUpdates extends Command
                 $previousBody = '';
                 if ([] !== $lastUpdateNodes && is_string($lastUpdateNodes[0]['createdAt'] ?? null)) {
                     $lastUpdateDate = new \DateTimeImmutable($lastUpdateNodes[0]['createdAt']);
-                    $sixDaysAgo = new \DateTimeImmutable('-6 days');
+                    $sixDaysAgo = new \DateTimeImmutable('-6 days', new \DateTimeZone('UTC'));
 
                     // Skip if a manual update was posted within the last 6 days
                     if (!$isForce && $lastUpdateDate >= $sixDaysAgo) {
@@ -239,6 +242,15 @@ class PostProjectUpdates extends Command
         GRAPHQL;
 
         $data = $this->executeGraphQLQuery($query);
+
+        if (!empty($data['errors'])) {
+            /** @var array<int, array<string, mixed>> $errors */
+            $errors = is_array($data['errors']) ? $data['errors'] : [];
+            $errorMessage = isset($errors[0]) && is_string($errors[0]['message'] ?? null)
+                ? $errors[0]['message']
+                : 'Unknown GraphQL error';
+            throw new \RuntimeException('GraphQL error fetching projects: '.$errorMessage);
+        }
 
         if (!isset($data['data']) || !is_array($data['data']) || !isset($data['data']['projects'])) {
             throw new \RuntimeException('No project data found from Linear API.');
@@ -473,7 +485,7 @@ class PostProjectUpdates extends Command
     private function postProjectUpdate(string $projectId, string $body, string $health): void
     {
         $mutation = <<<'GRAPHQL'
-        mutation($projectId: String!, $body: String!, $health: String!) {
+        mutation($projectId: String!, $body: String!, $health: ProjectUpdateHealthType!) {
           projectUpdateCreate(input: {
             projectId: $projectId,
             body: $body,
@@ -492,6 +504,15 @@ class PostProjectUpdates extends Command
             'body' => $body,
             'health' => $health,
         ]);
+
+        if (!empty($data['errors'])) {
+            /** @var array<int, array<string, mixed>> $errors */
+            $errors = is_array($data['errors']) ? $data['errors'] : [];
+            $errorMessage = isset($errors[0]) && is_string($errors[0]['message'] ?? null)
+                ? $errors[0]['message']
+                : 'Unknown GraphQL error';
+            throw new \RuntimeException('GraphQL error posting update: '.$errorMessage);
+        }
 
         /** @var array<string, mixed> $dataArray */
         $dataArray = is_array($data['data'] ?? null) ? $data['data'] : [];

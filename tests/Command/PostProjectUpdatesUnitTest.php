@@ -63,7 +63,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Project Alpha',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
@@ -138,7 +138,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Project Alpha',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
@@ -357,7 +357,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Risky Project',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
@@ -452,7 +452,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Project Beta',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
@@ -616,7 +616,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'No Key Project',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
@@ -677,7 +677,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Empty Response Project',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
@@ -739,7 +739,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Failing Project',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
@@ -748,7 +748,7 @@ class PostProjectUpdatesUnitTest extends TestCase
                                 'name' => 'Good Project',
                                 'projectUpdates' => [
                                     'nodes' => [
-                                        ['createdAt' => '2026-03-11T00:00:00Z'],
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update content.'],
                                     ],
                                 ],
                             ],
