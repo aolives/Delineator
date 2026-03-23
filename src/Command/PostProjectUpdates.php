@@ -280,6 +280,7 @@ class PostProjectUpdates extends Command
               nodes {
                 identifier
                 title
+                description
                 state {
                   name
                 }
@@ -289,6 +290,14 @@ class PostProjectUpdates extends Command
                 labels {
                   nodes {
                     name
+                  }
+                }
+                comments(filter: { createdAt: { gte: $since } }) {
+                  nodes {
+                    body
+                    user {
+                      name
+                    }
                   }
                 }
               }
@@ -345,8 +354,28 @@ class PostProjectUpdates extends Command
                 $labelNodes
             );
             $labelStr = [] !== $labels ? ' ['.implode(', ', $labels).']' : '';
+            $description = is_string($issue['description'] ?? null) ? $issue['description'] : '';
+
+            $commentNodes = is_array($issue['comments'] ?? null) && is_array($issue['comments']['nodes'] ?? null) ? $issue['comments']['nodes'] : [];
+            $commentsStr = '';
+            foreach ($commentNodes as $comment) {
+                if (!is_array($comment)) {
+                    continue;
+                }
+                $commentBody = is_string($comment['body'] ?? null) ? $comment['body'] : '';
+                $commentUser = is_array($comment['user'] ?? null) && is_string($comment['user']['name'] ?? null) ? $comment['user']['name'] : 'Unknown';
+                if ('' !== $commentBody) {
+                    $commentsStr .= "    - {$commentUser}: {$commentBody}\n";
+                }
+            }
 
             $issuesSummary .= "- {$identifier}: {$title} ({$state}, assigned to {$assignee}){$labelStr}\n";
+            if ('' !== $description) {
+                $issuesSummary .= "  Description: {$description}\n";
+            }
+            if ('' !== $commentsStr) {
+                $issuesSummary .= "  Recent comments:\n{$commentsStr}";
+            }
         }
 
         $previousContext = '';
@@ -368,6 +397,8 @@ class PostProjectUpdates extends Command
         You are a project lead writing a brief weekly status update for "{$projectName}". Your audience is management.
         {$descriptionContext}
         Write like a confident engineer who knows their project is in good shape. Be straightforward and factual — say what happened and what's coming next. Don't use hedging language, don't qualify things, and don't mention anything about pace or velocity. Don't reference ticket IDs, assignee names, or labels. Avoid words like "however", "although", "despite", "remains", "concerns", or "challenges".
+
+        Each issue may include a description and recent comments — use these for additional context to write a more informed update, but don't quote them directly or go into excessive detail.
 
         IMPORTANT: The state field on each issue is authoritative. Only describe work as "in progress" if the state is literally "In Progress". Issues in "Backlog" or "Todo" are not being actively worked on — they may have been updated for administrative reasons (due date changes, comments, re-prioritization). Do not describe backlog items as if work has started on them.
         {$previousContext}

@@ -726,6 +726,107 @@ class PostProjectUpdatesUnitTest extends TestCase
         $this->assertStringContainsString('in progress', $output);
     }
 
+    public function testIssueDescriptionAndCommentsIncludedInPrompt(): void
+    {
+        $capturedRequests = [];
+        $mockHandler = new MockHandler([
+            // Projects query
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'projects' => [
+                        'nodes' => [
+                            [
+                                'id' => 'proj-1',
+                                'name' => 'Context Project',
+                                'projectUpdates' => [
+                                    'nodes' => [
+                                        ['createdAt' => '2026-03-11T00:00:00Z', 'body' => 'Previous update.'],
+                                    ],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            // Issues query with description and comments
+            new Response(200, [], (string) json_encode([
+                'data' => [
+                    'project' => [
+                        'issues' => [
+                            'nodes' => [
+                                [
+                                    'identifier' => 'CTX-1',
+                                    'title' => 'Add search feature',
+                                    'description' => 'Implement full-text search across all documents.',
+                                    'state' => ['name' => 'In Progress'],
+                                    'assignee' => ['name' => 'Alice'],
+                                    'labels' => ['nodes' => []],
+                                    'comments' => [
+                                        'nodes' => [
+                                            [
+                                                'body' => 'Decided to use Elasticsearch for this.',
+                                                'user' => ['name' => 'Alice'],
+                                            ],
+                                            [
+                                                'body' => 'Index prototype is working, need to add filters.',
+                                                'user' => ['name' => 'Bob'],
+                                            ],
+                                        ],
+                                    ],
+                                ],
+                                [
+                                    'identifier' => 'CTX-2',
+                                    'title' => 'Fix pagination',
+                                    'description' => null,
+                                    'state' => ['name' => 'Done'],
+                                    'assignee' => ['name' => 'Bob'],
+                                    'labels' => ['nodes' => []],
+                                    'comments' => ['nodes' => []],
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ])),
+            // Claude API response
+            new Response(200, [], (string) json_encode([
+                'content' => [
+                    ['type' => 'text', 'text' => json_encode([
+                        'body' => 'Search feature in progress using Elasticsearch. Pagination fix completed.',
+                        'health' => 'onTrack',
+                    ])],
+                ],
+            ])),
+        ]);
+
+        $history = \GuzzleHttp\Middleware::history($capturedRequests);
+        $handlerStack = HandlerStack::create($mockHandler);
+        $handlerStack->push($history);
+        $mockClient = new Client(['handler' => $handlerStack]);
+
+        $command = new PostProjectUpdates($mockClient);
+        $application = new Application();
+        $application->addCommand($command);
+        $commandTester = new CommandTester($command);
+
+        $commandTester->execute(['--dry-run' => true]);
+
+        $this->assertEquals(0, $commandTester->getStatusCode());
+
+        // Verify the Claude API request includes description and comments
+        $this->assertCount(3, $capturedRequests);
+        $claudeRequest = $capturedRequests[2];
+        $claudeBody = (string) $claudeRequest['request']->getBody();
+        $claudePayload = json_decode($claudeBody, true);
+        $prompt = $claudePayload['messages'][0]['content'];
+
+        $this->assertStringContainsString('Implement full-text search across all documents.', $prompt);
+        $this->assertStringContainsString('Decided to use Elasticsearch for this.', $prompt);
+        $this->assertStringContainsString('Index prototype is working, need to add filters.', $prompt);
+        // Issue with null description should not have "Description:" line
+        $this->assertStringNotContainsString('Description: Fix pagination', $prompt);
+    }
+
     public function testOneProjectFailureDoesNotAbortOthers(): void
     {
         $mockHandler = new MockHandler([
