@@ -44,3 +44,5 @@ jobs:
           APP_ENV: prod
           LINEAR_API_KEY: ${{ secrets.LINEAR_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SLACK_OAUTH_TOKEN: ${{ secrets.SLACK_OAUTH_TOKEN }}
+          SLACK_USER_ID: ${{ secrets.SLACK_USER_ID }}

@@ -20,6 +20,8 @@ class PostProjectUpdates extends Command
 {
     private string $linearApiKey;
     private string $anthropicApiKey;
+    private string $slackToken;
+    private string $slackUserId;
 
     public function __construct(private ?Client $httpClient = null)
     {
@@ -44,6 +46,12 @@ class PostProjectUpdates extends Command
 
         $anthropicEnv = getenv('ANTHROPIC_API_KEY') ?: ($_ENV['ANTHROPIC_API_KEY'] ?? '');
         $this->anthropicApiKey = is_string($anthropicEnv) ? $anthropicEnv : '';
+
+        $slackTokenEnv = getenv('SLACK_OAUTH_TOKEN') ?: ($_ENV['SLACK_OAUTH_TOKEN'] ?? '');
+        $this->slackToken = is_string($slackTokenEnv) ? $slackTokenEnv : '';
+
+        $slackUserIdEnv = getenv('SLACK_USER_ID') ?: ($_ENV['SLACK_USER_ID'] ?? '');
+        $this->slackUserId = is_string($slackUserIdEnv) ? $slackUserIdEnv : '';
 
         $isDryRun = $input->getOption('dry-run');
         $isForce = $input->getOption('force');
@@ -142,6 +150,7 @@ class PostProjectUpdates extends Command
                 }
 
                 $issues = $this->fetchProjectIssues($projectId, $baselineDate);
+                $generatedPrompt = null;
 
                 if ([] === $issues && '' === $previousBody) {
                     // New project with no activity — still in planning phase
@@ -160,6 +169,10 @@ class PostProjectUpdates extends Command
                         $result = $this->generateStatusUpdate($projectName, $projectDescription, $issues, $previousBody);
                         $body = $result['body'];
                         $health = $result['health'];
+                        $io->writeln('<comment>--- Prompt used ---</comment>');
+                        $io->writeln($result['prompt']);
+                        $io->writeln('<comment>-------------------</comment>');
+                        $generatedPrompt = $result['prompt'];
                     } catch (\Exception $e) {
                         $io->warning("Claude API unavailable ({$e->getMessage()}), using template fallback.");
                         $result = $this->generateTemplateUpdate($issues);
@@ -175,6 +188,14 @@ class PostProjectUpdates extends Command
                 } else {
                     $this->postProjectUpdate($projectId, $body, $health);
                     $io->success("Successfully posted update for {$projectName} (health: {$health})");
+                }
+
+                if (null !== $generatedPrompt && '' !== $this->slackToken && '' !== $this->slackUserId) {
+                    try {
+                        $this->sendPromptToSlack($projectName, $generatedPrompt);
+                    } catch (\Exception $slackEx) {
+                        $io->warning("Could not send prompt to Slack: {$slackEx->getMessage()}");
+                    }
                 }
             } catch (\Exception $e) {
                 ++$failures;
@@ -338,7 +359,7 @@ class PostProjectUpdates extends Command
     /**
      * @param array<int, array<string, mixed>> $issues
      *
-     * @return array{body: string, health: string}
+     * @return array{body: string, health: string, prompt: string}
      */
     private function generateStatusUpdate(string $projectName, string $projectDescription, array $issues, string $previousUpdate = ''): array
     {
@@ -461,12 +482,12 @@ class PostProjectUpdates extends Command
                 ? $parsed['health']
                 : 'onTrack';
 
-            return ['body' => $parsed['body'], 'health' => $health];
+            return ['body' => $parsed['body'], 'health' => $health, 'prompt' => $prompt];
         }
 
         // If we got text but couldn't parse valid JSON with a body, use the raw text
         if ('' !== trim($text)) {
-            return ['body' => $text, 'health' => 'onTrack'];
+            return ['body' => $text, 'health' => 'onTrack', 'prompt' => $prompt];
         }
 
         throw new \RuntimeException('Claude API returned empty body after parsing.');
@@ -509,6 +530,22 @@ class PostProjectUpdates extends Command
         $emoji = $emojis[array_rand($emojis)];
 
         return ['body' => implode(' ', $parts).' '.$emoji, 'health' => 'onTrack'];
+    }
+
+    private function sendPromptToSlack(string $projectName, string $prompt): void
+    {
+        assert($this->httpClient instanceof Client);
+        $message = "*Prompt used for \"{$projectName}\" project update:*\n```{$prompt}```";
+        $this->httpClient->request('POST', 'https://slack.com/api/chat.postMessage', [
+            'headers' => [
+                'Authorization' => 'Bearer '.$this->slackToken,
+                'Content-Type' => 'application/json',
+            ],
+            'json' => [
+                'channel' => $this->slackUserId,
+                'text' => $message,
+            ],
+        ]);
     }
 
     private function postProjectUpdate(string $projectId, string $body, string $health): void
