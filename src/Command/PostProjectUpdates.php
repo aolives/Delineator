@@ -88,36 +88,6 @@ class PostProjectUpdates extends Command
             return Command::SUCCESS;
         }
 
-        $quietMessages = [
-            'Quiet week on this project. Work continues as planned.',
-            'No big updates — everything is tracking smoothly.',
-            'Business as usual this week. On track.',
-            'All good here — plugging along as planned.',
-            'Nothing new to report. Steady as she goes.',
-            'Low activity this week, everything on track.',
-            'Smooth sailing — work continues in the background.',
-            'No updates needed — things are humming along.',
-            'Ticking along nicely. More to share next week.',
-            'Cruising along — no blockers, no surprises.',
-            'Steady week — everything moving as expected.',
-            'Nothing to flag. Work is progressing normally.',
-            'On track, no changes to report.',
-            'Chugging along — more updates next time.',
-            'Quiet stretch, but things are in good shape.',
-            'Holding steady. Will have more to share soon.',
-            'Everything is on track. Business as usual.',
-            'Moving along as planned — nothing to call out.',
-            'Progressing as expected — no surprises this week.',
-            'Keeping the wheels turning. Nothing new to report.',
-            'Status quo this week. All good.',
-            'Heads down, making progress. More next week.',
-            'Things are humming along nicely.',
-            'Staying the course — everything on track.',
-            'All quiet on this front. Moving forward.',
-        ];
-        shuffle($quietMessages);
-        $quietMessageIndex = 0;
-
         $failures = 0;
 
         foreach ($projects as $project) {
@@ -157,9 +127,8 @@ class PostProjectUpdates extends Command
                     $body = 'Currently in the planning and scoping phase. Defining requirements and shaping the work ahead.';
                     $health = 'onTrack';
                 } elseif ([] === $issues) {
-                    $body = $quietMessages[$quietMessageIndex % count($quietMessages)];
-                    ++$quietMessageIndex;
-                    $health = 'onTrack';
+                    $io->info("Skipping {$projectName} — no activity this week.");
+                    continue;
                 } elseif ('' === $this->anthropicApiKey || '0' === $this->anthropicApiKey) {
                     $result = $this->generateTemplateUpdate($issues);
                     $body = $result['body'];

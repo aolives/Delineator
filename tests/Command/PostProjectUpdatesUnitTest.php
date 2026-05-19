@@ -291,7 +291,7 @@ class PostProjectUpdatesUnitTest extends TestCase
         $this->assertEquals(0, $mockHandler->count());
     }
 
-    public function testNoIssuesUpdatedPostsStaticMessageWithoutClaudeCall(): void
+    public function testNoIssuesSkipsProjectWithoutPosting(): void
     {
         $mockHandler = new MockHandler([
             // Projects query
@@ -336,10 +336,10 @@ class PostProjectUpdatesUnitTest extends TestCase
 
         $this->assertEquals(0, $commandTester->getStatusCode());
         $output = $commandTester->getDisplay();
-        $this->assertStringContainsString('Quiet Project', $output);
-        $this->assertStringContainsString('onTrack', $output);
-        // Should NOT contain the planning message
-        $this->assertStringNotContainsString('planning', $output);
+        // Project should be skipped — no update posted, no health status in output
+        $this->assertStringContainsString('no activity this week', $output);
+        $this->assertStringNotContainsString('onTrack', $output);
+        $this->assertStringNotContainsString('[DRY RUN]', $output);
         // Only 2 responses consumed (projects + issues), no Claude call
         $this->assertEquals(0, $mockHandler->count());
     }
